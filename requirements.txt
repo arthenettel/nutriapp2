@@ -1,0 +1,13 @@
+# Flask para el servidor web y API
+Flask
+Flask-Cors
+
+# Para la IA de Google
+google-generativeai
+Pillow
+
+# Para las variables de entorno
+python-dotenv
+
+# Para hashear contraseñas (se instala con Flask, pero es bueno tenerlo explícito)
+Werkzeug

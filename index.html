@@ -1,0 +1,414 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NutriApp Pro (Local)</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <style>
+        body { font-family: 'Inter', sans-serif; background-color: #f0fdf4; }
+        .form-container { transition: opacity 0.3s ease-in-out, transform 0.3s ease-in-out; }
+        .form-container.hidden { opacity: 0; transform: translateY(10px); position: absolute; pointer-events: none; }
+        .auth-toggle-btn.active { background-color: #10b981; color: white; }
+        .nav-item.active { background-color: #10b981; color: white; }
+        .view { display: none; }
+        .view.active { display: block; animation: fadeIn 0.5s; }
+        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+    </style>
+</head>
+<body>
+    <!-- Auth Section Redesigned -->
+    <div id="auth-section">
+        <div class="min-h-screen flex items-center justify-center p-4">
+            <div class="bg-white flex rounded-2xl shadow-2xl max-w-4xl overflow-hidden">
+                <div class="hidden md:flex w-1/2 bg-gradient-to-tr from-emerald-500 to-teal-400 p-12 flex-col justify-center items-center text-white">
+                    <h1 class="text-4xl font-bold mb-4">Bienvenido a NutriApp</h1>
+                    <p class="text-center">Tu asistente personal para una vida más saludable. Analiza, crea y descubre.</p>
+                </div>
+                <div class="w-full md:w-1/2 p-8 sm:p-12">
+                    <h1 class="text-3xl font-bold text-center mb-6 text-gray-800">NutriApp</h1>
+                    <div class="flex justify-center mb-6 border border-gray-200 rounded-lg p-1">
+                        <button id="show-login-btn" class="auth-toggle-btn px-6 py-2 w-1/2 rounded-md font-semibold transition-colors duration-300 active">Iniciar Sesión</button>
+                        <button id="show-register-btn" class="auth-toggle-btn px-6 py-2 w-1/2 rounded-md font-semibold transition-colors duration-300 text-gray-500">Registrarse</button>
+                    </div>
+                    <div class="relative h-72">
+                        <div id="login-form-container" class="form-container w-full">
+                            <form id="login-form" class="space-y-4">
+                                <input type="email" id="login-email" placeholder="Email" class="w-full p-3 rounded-lg bg-gray-50 border border-gray-300 focus:ring-2 focus:ring-emerald-500" required>
+                                <input type="password" id="login-password" placeholder="Contraseña" class="w-full p-3 rounded-lg bg-gray-50 border border-gray-300 focus:ring-2 focus:ring-emerald-500" required>
+                                <button type="submit" class="w-full p-3 rounded-lg font-bold text-white bg-emerald-600 hover:bg-emerald-700 transition shadow-lg hover:shadow-none">Iniciar Sesión</button>
+                            </form>
+                        </div>
+                        <div id="register-form-container" class="form-container hidden w-full">
+                            <form id="register-form" class="space-y-4">
+                                <input type="text" id="register-name" placeholder="Nombre Completo" class="w-full p-3 rounded-lg bg-gray-50 border border-gray-300 focus:ring-2 focus:ring-emerald-500" required>
+                                <input type="email" id="register-email" placeholder="Email" class="w-full p-3 rounded-lg bg-gray-50 border border-gray-300 focus:ring-2 focus:ring-emerald-500" required>
+                                <input type="password" id="register-password" placeholder="Contraseña (mín. 6 caracteres)" class="w-full p-3 rounded-lg bg-gray-50 border border-gray-300 focus:ring-2 focus:ring-emerald-500" required>
+                                <button type="submit" class="w-full p-3 rounded-lg font-bold text-white bg-emerald-600 hover:bg-emerald-700 transition shadow-lg hover:shadow-none">Registrarse</button>
+                            </form>
+                        </div>
+                    </div>
+                    <p id="auth-error" class="text-red-500 text-sm mt-4 text-center h-5"></p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Main App Section (initially hidden) -->
+    <div id="main-app-view" class="hidden max-w-5xl mx-auto">
+        <header class="bg-white p-4 rounded-t-2xl shadow-lg mt-8 border-b border-gray-200">
+            <nav class="flex justify-center items-center space-x-2 md:space-x-4" id="main-nav"></nav>
+        </header>
+        <main class="bg-white p-4 md:p-6 rounded-b-2xl shadow-lg">
+            <div id="dashboard-view" class="view"></div>
+            <div id="analyze-view" class="view"></div>
+            <div id="recipe-view" class="view"></div>
+            <div id="history-view" class="view"></div>
+            <div id="profile-view" class="view"></div>
+        </main>
+    </div>
+    
+    <!-- Modales -->
+    <div id="result-modal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 hidden z-20"></div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const API_URL = 'http://127.0.0.1:5000';
+            let currentUser = null;
+            let currentImageBlob = null;
+            let videoStream = null;
+
+            // --- LÓGICA DE LA INTERFAZ ---
+            function updateUI() {
+                const authSection = document.getElementById('auth-section');
+                const mainAppView = document.getElementById('main-app-view');
+                if (currentUser) {
+                    authSection.classList.add('hidden');
+                    mainAppView.classList.remove('hidden');
+                    loadAppHTML();
+                    addAppEventListeners();
+                    fetchProfileData(true);
+                } else {
+                    authSection.classList.remove('hidden');
+                    mainAppView.classList.add('hidden');
+                    addAuthEventListeners();
+                }
+            }
+
+            function navigateToView(viewId) {
+                document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+                document.getElementById(viewId).classList.add('active');
+                document.querySelectorAll('.nav-item').forEach(t => t.classList.remove('active'));
+                const activeTab = document.querySelector(`[data-view="${viewId}"]`);
+                if(activeTab) activeTab.classList.add('active');
+                
+                if (viewId === 'dashboard-view') fetchProfileData();
+                if (viewId === 'profile-view') loadProfileForm();
+                if (viewId === 'history-view') fetchHistory();
+            }
+
+            // --- CARGA DE HTML DINÁMICO ---
+            function loadAppHTML() {
+                document.getElementById('main-nav').innerHTML = `
+                    <button data-view="dashboard-view" class="nav-item px-4 py-2 rounded-md text-sm font-medium cursor-pointer transition-colors">Dashboard</button>
+                    <button data-view="analyze-view" class="nav-item px-4 py-2 rounded-md text-sm font-medium cursor-pointer transition-colors">Analizar</button>
+                    <button data-view="recipe-view" class="nav-item px-4 py-2 rounded-md text-sm font-medium cursor-pointer transition-colors">Crear Receta</button>
+                    <button data-view="history-view" class="nav-item px-4 py-2 rounded-md text-sm font-medium cursor-pointer transition-colors">Historial</button>
+                    <button data-view="profile-view" class="nav-item px-4 py-2 rounded-md text-sm font-medium cursor-pointer transition-colors">Perfil</button>
+                `;
+                document.getElementById('dashboard-view').innerHTML = `
+                    <header class="flex justify-between items-center pb-4 border-b border-gray-200">
+                        <div><h2 class="text-2xl font-bold text-gray-800">Hola, <span id="welcome-message-dashboard"></span></h2><p class="text-sm text-gray-500">¡Tu resumen de hoy!</p></div>
+                        <button id="logout-btn" class="text-red-500 hover:text-red-700 text-sm font-semibold">Cerrar Sesión</button>
+                    </header>
+                    <div class="bg-white p-6 rounded-xl mt-6">
+                        <h3 class="text-xl font-semibold mb-4 text-gray-800">Tu progreso</h3>
+                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                            <div class="text-center"><p class="text-4xl font-bold text-gray-800" id="total-calories-today">0</p><p class="text-sm text-gray-500">Kcal hoy</p></div>
+                            <div class="text-center"><p class="text-4xl font-bold text-gray-800" id="recommended-calories-display">--</p><p class="text-sm text-gray-500">Kcal recomendadas</p></div>
+                        </div>
+                        <div class="mt-4 border-t border-gray-200 pt-4">
+                            <p class="text-sm font-medium text-gray-700">IMC: <span id="imc-display" class="font-bold">--</span></p>
+                            <p class="text-sm font-medium text-gray-700">Recomendación: <span id="imc-recommendation" class="font-bold">--</span></p>
+                        </div>
+                    </div>`;
+                document.getElementById('analyze-view').innerHTML = `
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <div>
+                            <h2 class="text-xl font-bold mb-4">1. Captura tu platillo</h2>
+                            <div class="flex space-x-4 mb-4"><button id="upload-btn" class="flex-1 bg-emerald-500 text-white py-2 rounded-lg hover:bg-emerald-600">Subir Foto</button><button id="camera-btn" class="flex-1 bg-blue-500 text-white py-2 rounded-lg hover:bg-blue-600">Tomar Foto</button></div>
+                            <input type="file" id="file-input" class="hidden" accept="image/*">
+                            <div id="image-display" class="mt-4 border-2 border-dashed border-gray-300 rounded-lg p-4 min-h-[200px] flex items-center justify-center">
+                                <video id="video-player" class="hidden rounded-lg w-full"></video><img id="image-preview" src="" class="hidden rounded-lg max-h-60 w-auto"><p id="image-placeholder" class="text-gray-400">Aquí aparecerá tu imagen...</p>
+                            </div>
+                            <button id="capture-btn" class="hidden w-full mt-4 bg-gray-700 text-white py-2 rounded-lg">Capturar</button>
+                        </div>
+                        <div>
+                            <h2 class="text-xl font-bold mb-4">2. Elige un análisis</h2>
+                            <div class="space-y-3">
+                                <button data-analysis="analyze_elements" class="analysis-btn w-full text-left p-3 bg-gray-100 rounded-lg hover:bg-emerald-100">Analizar Elementos</button>
+                                <button data-analysis="how_to_cook" class="analysis-btn w-full text-left p-3 bg-gray-100 rounded-lg hover:bg-emerald-100">¿Cómo se cocina?</button>
+                                <button data-analysis="nutritional_value" class="analysis-btn w-full text-left p-3 bg-gray-100 rounded-lg hover:bg-emerald-100">Valor Nutricional</button>
+                                <button data-analysis="similar_dishes" class="analysis-btn w-full text-left p-3 bg-gray-100 rounded-lg hover:bg-emerald-100">Platillos Similares</button>
+                            </div>
+                        </div>
+                    </div>`;
+                document.getElementById('recipe-view').innerHTML = `
+                    <div class="max-w-xl mx-auto p-6 rounded-xl">
+                        <h2 class="text-xl font-bold mb-4">Crear Receta por Ingredientes</h2>
+                        <p class="text-gray-600 mb-4">Escribe los ingredientes que tienes (separados por comas) y la IA creará una receta para ti.</p>
+                        <textarea id="ingredients-input" rows="4" placeholder="Ej: pollo, arroz, brócoli, salsa de soja, ajo" class="w-full p-2 border rounded-lg"></textarea>
+                        <button id="generate-recipe-btn" class="w-full mt-4 bg-emerald-600 text-white font-bold py-2 rounded-lg hover:bg-emerald-700">Generar Receta</button>
+                    </div>`;
+                document.getElementById('history-view').innerHTML = `
+                    <h2 class="text-2xl font-bold mb-4">Mi Historial</h2>
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <div><h3 class="text-lg font-semibold mb-3">Análisis de Imágenes</h3><div id="image-history-container" class="space-y-4 max-h-[60vh] overflow-y-auto p-2"></div></div>
+                        <div><h3 class="text-lg font-semibold mb-3">Recetas por Ingredientes</h3><div id="ingredient-history-container" class="space-y-4 max-h-[60vh] overflow-y-auto p-2"></div></div>
+                    </div>`;
+                document.getElementById('profile-view').innerHTML = `
+                    <h2 class="text-2xl font-bold mb-4">Completa tu Perfil</h2>
+                    <form id="profile-form" class="space-y-4 max-w-lg mx-auto">
+                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                            <div><label for="profile-age" class="block text-sm font-medium text-gray-700">Edad</label><input type="number" id="profile-age" class="mt-1 block w-full p-2 border border-gray-300 rounded-md"></div>
+                            <div><label for="profile-weight" class="block text-sm font-medium text-gray-700">Peso (kg)</label><input type="number" id="profile-weight" step="0.1" class="mt-1 block w-full p-2 border border-gray-300 rounded-md"></div>
+                            <div><label for="profile-height" class="block text-sm font-medium text-gray-700">Altura (cm)</label><input type="number" id="profile-height" class="mt-1 block w-full p-2 border border-gray-300 rounded-md"></div>
+                            <div><label for="profile-gender" class="block text-sm font-medium text-gray-700">Sexo</label><select id="profile-gender" class="mt-1 block w-full p-2 border border-gray-300 rounded-md"><option>Masculino</option><option>Femenino</option></select></div>
+                        </div>
+                        <div><label for="profile-activity" class="block text-sm font-medium text-gray-700">Nivel de Actividad</label><select id="profile-activity" class="mt-1 block w-full p-2 border border-gray-300 rounded-md"><option>Sedentario</option><option>Ligero</option><option>Moderado</option><option>Activo</option><option>Muy activo</option></select></div>
+                        <button type="submit" class="w-full bg-emerald-600 text-white font-bold py-2 px-4 rounded-lg hover:bg-emerald-700">Guardar Perfil</button>
+                    </form>`;
+                document.getElementById('result-modal').innerHTML = `
+                    <div class="bg-white p-6 rounded-2xl shadow-lg w-full max-w-2xl relative max-h-[90vh] flex flex-col">
+                        <button id="close-result-modal" class="absolute top-3 right-4 text-2xl text-gray-500 hover:text-gray-800">&times;</button>
+                        <h2 id="result-title" class="text-xl font-bold mb-4">Resultado</h2>
+                        <div id="result-content" class="prose max-w-none overflow-y-auto pr-4"></div>
+                        <div id="result-loader" class="text-center py-10"><svg class="animate-spin h-10 w-10 text-emerald-600 mx-auto" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg><p class="mt-2 text-gray-600">Procesando...</p></div>
+                    </div>`;
+            }
+
+            // --- EVENT LISTENERS ---
+            function addAppEventListeners() {
+                document.getElementById('main-nav').addEventListener('click', (e) => {
+                    if (e.target.dataset.view) navigateToView(e.target.dataset.view);
+                });
+                document.getElementById('logout-btn').addEventListener('click', () => {
+                    currentUser = null;
+                    updateUI();
+                });
+                document.getElementById('upload-btn').addEventListener('click', () => document.getElementById('file-input').click());
+                document.getElementById('camera-btn').addEventListener('click', async () => {
+                    if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+                        try {
+                            videoStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
+                            document.getElementById('video-player').srcObject = videoStream;
+                            document.getElementById('video-player').classList.remove('hidden');
+                            document.getElementById('capture-btn').classList.remove('hidden');
+                            document.getElementById('image-preview').classList.add('hidden');
+                            document.getElementById('image-placeholder').classList.add('hidden');
+                        } catch (err) { alert("No se pudo acceder a la cámara."); }
+                    }
+                });
+                document.getElementById('capture-btn').addEventListener('click', () => {
+                    const videoPlayer = document.getElementById('video-player');
+                    const imagePreview = document.getElementById('image-preview');
+                    const canvas = document.createElement('canvas');
+                    canvas.width = videoPlayer.videoWidth;
+                    canvas.height = videoPlayer.videoHeight;
+                    canvas.getContext('2d').drawImage(videoPlayer, 0, 0);
+                    imagePreview.src = canvas.toDataURL('image/jpeg');
+                    imagePreview.classList.remove('hidden');
+                    canvas.toBlob(blob => { currentImageBlob = blob; }, 'image/jpeg');
+                    stopCamera();
+                });
+                document.getElementById('file-input').addEventListener('change', (e) => {
+                    const file = e.target.files[0];
+                    if (file) {
+                        stopCamera();
+                        const reader = new FileReader();
+                        reader.onload = (event) => {
+                            document.getElementById('image-preview').src = event.target.result;
+                            document.getElementById('image-preview').classList.remove('hidden');
+                            document.getElementById('image-placeholder').classList.add('hidden');
+                            currentImageBlob = file;
+                        };
+                        reader.readAsDataURL(file);
+                    }
+                });
+                document.querySelectorAll('.analysis-btn').forEach(btn => {
+                    btn.addEventListener('click', async () => {
+                        if (!currentImageBlob) { alert('Por favor, sube o toma una foto primero.'); return; }
+                        showResultModal(btn.textContent);
+                        try {
+                            const imageBase64 = await toBase64(currentImageBlob);
+                            const data = await handleApiCall('analyze', 'POST', { userId: currentUser.id, analysisType: btn.dataset.analysis, image: imageBase64 });
+                            displayResult(data.result);
+                        } catch (err) { displayResult(`**Error:** ${err.message}`); }
+                    });
+                });
+                document.getElementById('generate-recipe-btn').addEventListener('click', async () => {
+                    const ingredients = document.getElementById('ingredients-input').value;
+                    if (!ingredients) { alert('Por favor, ingresa algunos ingredientes.'); return; }
+                    showResultModal('Receta Sugerida');
+                    try {
+                        const data = await handleApiCall('analyze', 'POST', { userId: currentUser.id, analysisType: 'recommend_recipe', ingredients: ingredients });
+                        displayResult(data.result);
+                    } catch (err) { displayResult(`**Error:** ${err.message}`); }
+                });
+                document.getElementById('profile-form').addEventListener('submit', async (e) => {
+                    e.preventDefault();
+                    const profileData = {
+                        userId: currentUser.id,
+                        age: document.getElementById('profile-age').value,
+                        weight: document.getElementById('profile-weight').value,
+                        height: document.getElementById('profile-height').value,
+                        gender: document.getElementById('profile-gender').value,
+                        activity_level: document.getElementById('profile-activity').value,
+                    };
+                    try {
+                        await handleApiCall('profile', 'POST', profileData);
+                        alert('Perfil guardado con éxito');
+                        navigateToView('dashboard-view');
+                    } catch (err) { alert(`Error al guardar: ${err.message}`); }
+                });
+            }
+
+            function addAuthEventListeners() {
+                const showLoginBtn = document.getElementById('show-login-btn');
+                const showRegisterBtn = document.getElementById('show-register-btn');
+                const loginFormContainer = document.getElementById('login-form-container');
+                const registerFormContainer = document.getElementById('register-form-container');
+                showLoginBtn.addEventListener('click', () => {
+                    loginFormContainer.classList.remove('hidden');
+                    registerFormContainer.classList.add('hidden');
+                    showLoginBtn.classList.add('active');
+                    showRegisterBtn.classList.remove('active');
+                });
+                showRegisterBtn.addEventListener('click', () => {
+                    loginFormContainer.classList.add('hidden');
+                    registerFormContainer.classList.remove('hidden');
+                    showLoginBtn.classList.remove('active');
+                    showRegisterBtn.classList.add('active');
+                });
+                document.getElementById('login-form').addEventListener('submit', async (e) => {
+                    e.preventDefault();
+                    const email = document.getElementById('login-email').value;
+                    const password = document.getElementById('login-password').value;
+                    try {
+                        const data = await handleApiCall('login', 'POST', { email, password });
+                        currentUser = data.user;
+                        updateUI();
+                    } catch (err) { document.getElementById('auth-error').textContent = err.message; }
+                });
+                document.getElementById('register-form').addEventListener('submit', async (e) => {
+                    e.preventDefault();
+                    const name = document.getElementById('register-name').value;
+                    const email = document.getElementById('register-email').value;
+                    const password = document.getElementById('register-password').value;
+                    try {
+                        await handleApiCall('register', 'POST', { name, email, password });
+                        alert('¡Registro exitoso! Ahora puedes iniciar sesión.');
+                        showLoginBtn.click();
+                    } catch (err) { document.getElementById('auth-error').textContent = err.message; }
+                });
+            }
+
+            // --- FUNCIONES DE API ---
+            async function handleApiCall(endpoint, method, body) {
+                const res = await fetch(`${API_URL}/${endpoint}`, {
+                    method: method,
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(body)
+                });
+                const data = await res.json();
+                if (!res.ok) throw new Error(data.error || "Error en el servidor.");
+                return data;
+            }
+
+            // --- LÓGICA DE PERFIL Y DATOS ---
+            async function fetchProfileData(isInitialFetch = false) {
+                try {
+                    const profileData = await handleApiCall(`profile/${currentUser.id}`, 'GET');
+                    currentUser = { ...currentUser, ...profileData };
+                    if (isInitialFetch) {
+                        if (!profileData.tdee) navigateToView('profile-view');
+                        else navigateToView('dashboard-view');
+                    }
+                    if (document.getElementById('dashboard-view').classList.contains('active')) updateDashboardView();
+                } catch (err) { console.error("Error al obtener perfil:", err); }
+            }
+            
+            function updateDashboardView() {
+                document.getElementById('welcome-message-dashboard').textContent = currentUser.name;
+                document.getElementById('recommended-calories-display').textContent = currentUser.tdee || '--';
+                document.getElementById('imc-display').textContent = currentUser.imc || '--';
+                document.getElementById('imc-recommendation').textContent = currentUser.imc_recommendation || '--';
+            }
+
+            function loadProfileForm() {
+                document.getElementById('profile-age').value = currentUser.age || '';
+                document.getElementById('profile-weight').value = currentUser.weight || '';
+                document.getElementById('profile-height').value = currentUser.height || '';
+                document.getElementById('profile-gender').value = currentUser.gender || 'Masculino';
+                document.getElementById('profile-activity').value = currentUser.activity_level || 'Sedentario';
+            }
+
+            async function fetchHistory() {
+                const imageContainer = document.getElementById('image-history-container');
+                const ingredientContainer = document.getElementById('ingredient-history-container');
+                imageContainer.innerHTML = '<p>Cargando...</p>';
+                ingredientContainer.innerHTML = '<p>Cargando...</p>';
+                try {
+                    const data = await handleApiCall(`history/${currentUser.id}`, 'GET');
+                    if(data.imageHistory.length > 0) {
+                        imageContainer.innerHTML = data.imageHistory.map(item => `<div class="bg-gray-50 p-3 rounded-lg"><p class="font-semibold">${new Date(item.timestamp).toLocaleString()}</p><div class="prose prose-sm">${marked.parse(item.result_text)}</div></div>`).join('');
+                    } else { imageContainer.innerHTML = '<p>No hay análisis de imágenes.</p>'; }
+                    if(data.ingredientHistory.length > 0) {
+                        ingredientContainer.innerHTML = data.ingredientHistory.map(item => `<div class="bg-gray-50 p-3 rounded-lg"><p class="font-semibold">${new Date(item.timestamp).toLocaleString()}</p><p class="text-xs">Ingredientes: ${item.ingredients_text}</p><div class="prose prose-sm">${marked.parse(item.result_text)}</div></div>`).join('');
+                    } else { ingredientContainer.innerHTML = '<p>No hay recetas generadas.</p>'; }
+                } catch (err) {
+                    imageContainer.innerHTML = `<p class="text-red-500">${err.message}</p>`;
+                    ingredientContainer.innerHTML = `<p class="text-red-500">${err.message}</p>`;
+                }
+            }
+
+            const toBase64 = file => new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.readAsDataURL(file);
+                reader.onload = () => resolve(reader.result.split(',')[1]);
+                reader.onerror = error => reject(error);
+            });
+
+            function stopCamera() {
+                if(videoStream) {
+                    videoStream.getTracks().forEach(track => track.stop());
+                    videoStream = null;
+                }
+                const videoPlayer = document.getElementById('video-player');
+                const captureBtn = document.getElementById('capture-btn');
+                if(videoPlayer) videoPlayer.classList.add('hidden');
+                if(captureBtn) captureBtn.classList.add('hidden');
+            }
+            
+            function showResultModal(title) {
+                const resultModal = document.getElementById('result-modal');
+                resultModal.classList.remove('hidden');
+                document.getElementById('result-title').textContent = title;
+                document.getElementById('result-content').innerHTML = '';
+                document.getElementById('result-loader').classList.remove('hidden');
+                document.getElementById('close-result-modal').addEventListener('click', () => resultModal.classList.add('hidden'));
+            }
+
+            function displayResult(markdownText) {
+                document.getElementById('result-content').innerHTML = marked.parse(markdownText || "No se recibió respuesta.");
+                document.getElementById('result-loader').classList.add('hidden');
+            }
+            
+            // Inicializar
+            updateUI();
+        });
+    </script>
+</body>
+</html>
